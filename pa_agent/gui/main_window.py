@@ -182,7 +182,7 @@ class _AnalysisWorker(QThread):
         except Exception as exc:  # noqa: BLE001
             from pa_agent.ai.deepseek_client import CancelledError as _CancelledError
             if isinstance(exc, _CancelledError):
-                logger.warning("Analysis worker cancelled: %s", exc)
+                logger.info("Analysis worker cancelled: %s", exc)
             else:
                 logger.error("Analysis worker error: %s", exc, exc_info=True)
             decision = {}
@@ -643,7 +643,8 @@ class MainWindow(QMainWindow):
 
     def _start_refresh_loop(self) -> None:
         """Start the RefreshLoop only when the data source is connected."""
-        # Reap any zombie loops before starting a fresh one
+        # Reap any zombie workers / loops before starting a fresh one
+        self._reap_zombie_workers()
         self._reap_zombie_loops()
 
         data_source = getattr(self._ctx, "data_source", None)
@@ -754,6 +755,43 @@ class MainWindow(QMainWindow):
             return False
         return _qobject_alive(self)
 
+    def _disconnect_analysis_worker(self, worker: _AnalysisWorker) -> None:
+        """Detach all MainWindow / panel slots from a worker thread."""
+        for signal_name in (
+            "finished",
+            "record_ready",
+            "error_occurred",
+            "status_update",
+            "reasoning_token",
+            "content_token",
+            "stage_prompt_ready",
+            "stage2_files_ready",
+            "retry_occurred",
+        ):
+            signal = getattr(worker, signal_name, None)
+            if signal is None:
+                continue
+            try:
+                signal.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+
+    def _reap_zombie_workers(self) -> None:
+        """Join zombie analysis workers that finished since last check."""
+        zombies = getattr(self, "_zombie_workers", None)
+        if not zombies:
+            return
+        still_alive: list[_AnalysisWorker] = []
+        for worker in zombies:
+            if worker.isRunning():
+                still_alive.append(worker)
+            else:
+                worker.deleteLater()
+        if still_alive:
+            self._zombie_workers = still_alive
+        else:
+            self._zombie_workers = []
+
     def _cancel_analysis_worker(self) -> None:
         """Cancel the AI worker and invalidate any pending finished callbacks."""
         self._analysis_worker_id = None
@@ -761,13 +799,25 @@ class MainWindow(QMainWindow):
             self._cancel_token.set()
         worker = self._worker
         self._worker = None
-        if worker is not None and worker.isRunning():
+        if worker is None:
+            return
+        # Disconnect before join so stale slots cannot touch the UI mid-switch.
+        self._disconnect_analysis_worker(worker)
+        if worker.isRunning():
             worker.wait(_WORKER_JOIN_TIMEOUT_MS)
-            if worker.isRunning():
-                logger.warning(
-                    "Analysis worker did not finish within %d ms after cancel",
-                    _WORKER_JOIN_TIMEOUT_MS,
-                )
+        if worker.isRunning():
+            logger.info(
+                "Analysis worker still running after %d ms cancel wait; "
+                "tracking as zombie",
+                _WORKER_JOIN_TIMEOUT_MS,
+            )
+            zombies = getattr(self, "_zombie_workers", None)
+            if zombies is None:
+                zombies = []
+                self._zombie_workers = zombies
+            zombies.append(worker)
+        else:
+            worker.deleteLater()
 
     def _cancel_snapshot_fetch_worker(self) -> None:
         """Cancel any running SnapshotFetchWorker and nullify its reference.
@@ -1697,21 +1747,11 @@ class MainWindow(QMainWindow):
         self._keep_analysis_last_closed_ts = None
         try:
             # ── Step 1: Cancel current AI worker ─────────────────────────────
-            if self._worker is not None and self._worker.isRunning():
-                if self._cancel_token is not None:
-                    self._cancel_token.set()
-                finished = self._worker.wait(_WORKER_JOIN_TIMEOUT_MS)
-                if not finished:
-                    logger.warning(
-                        "AI worker did not finish within %d ms after symbol/tf switch; "
-                        "marking as zombie",
-                        _WORKER_JOIN_TIMEOUT_MS,
-                    )
-                    # Mark as zombie — do not force-kill
-                self._worker = None
+            had_analysis = self._analysis_in_progress
+            self._cancel_analysis_worker()
 
             # ── Step 2: Save partial record if analysis was in progress ───────
-            if self._analysis_in_progress:
+            if had_analysis:
                 pending_writer = getattr(self._ctx, "pending_writer", None)
                 if pending_writer is not None:
                     # We don't have the active record here; the orchestrator
@@ -1765,9 +1805,10 @@ class MainWindow(QMainWindow):
 
             self._set_chart_refresh_paused(False)
 
-            self._status_bar.showMessage(
-                self._status_message_after_symbol_switch(new_symbol, new_tf)
-            )
+            switch_msg = self._status_message_after_symbol_switch(new_symbol, new_tf)
+            if had_analysis:
+                switch_msg = f"已切换至 {new_symbol} {new_tf}，进行中的分析已取消 — {switch_msg}"
+            self._status_bar.showMessage(switch_msg)
             logger.info("Symbol/TF switched to %s %s", new_symbol, new_tf)
             self._update_symbol_data_alert()
 
@@ -3701,7 +3742,8 @@ class MainWindow(QMainWindow):
             self._worker = None
             self._update_submit_button_state()
 
-            # Reap any zombie RefreshLoops that finished while we were busy
+            # Reap any zombie workers / refresh loops that finished while busy
+            self._reap_zombie_workers()
             self._reap_zombie_loops()
 
             # 分析结束后刷新持续跟踪分析哨兵，防止因分析期间新K线收盘而立即再次触发
