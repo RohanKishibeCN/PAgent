@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PA Agent - Web Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">📊 PA Agent</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link active">分析</a>
+        <a href="/results" class="nav-link">历史记录</a>
+        <a href="/settings" class="nav-link">设置</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="card">
+      <h2>交易分析</h2>
+
+      <form id="analyzeForm" class="form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>交易所</label>
+            <select name="exchange" id="exchange">
+              <option value="okx">OKX</option>
+              <option value="binance">Binance</option>
+              <option value="bybit">Bybit</option>
+              <option value="bitget">Bitget</option>
+              <option value="kucoin">KuCoin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>交易对</label>
+            <input type="text" name="symbol" id="symbol" value="BTC/USDT" placeholder="BTC/USDT">
+          </div>
+          <div class="form-group">
+            <label>周期</label>
+            <select name="timeframe" id="timeframe">
+              <option value="15m">15m</option>
+              <option value="1h" selected>1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>K 线数量</label>
+            <input type="number" name="bar_count" id="bar_count" value="80" min="20" max="500">
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <button type="submit" class="btn btn-primary" id="analyzeBtn">
+              🚀 开始分析
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div id="resultArea" class="card result-card" style="display:none">
+      <h2>分析结果</h2>
+      <div id="resultContent"></div>
+    </div>
+
+    <div id="loadingArea" class="card" style="display:none">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p id="loadingText">正在获取数据...</p>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

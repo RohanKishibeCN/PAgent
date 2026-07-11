@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>历史记录 - PA Agent</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">📊 PA Agent</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">分析</a>
+        <a href="/results" class="nav-link active">历史记录</a>
+        <a href="/settings" class="nav-link">设置</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="card">
+      <h2>历史分析记录</h2>
+      <div id="resultsTable"></div>
+    </div>
+
+    <div id="detailModal" class="modal" style="display:none">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeDetail()">&times;</span>
+        <h2>详细报告</h2>
+        <pre id="detailContent" class="json-display"></pre>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+  <script>loadResults()</script>
+</body>
+</html>
