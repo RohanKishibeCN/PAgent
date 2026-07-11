@@ -285,6 +285,13 @@ def api_result_detail(filename: str):
 
 # ── API: 配置 ────────────────────────────────────────────────────────────────
 
+def _mask_secret(val: str) -> str:
+    """Mask all but last 4 chars of a secret, or return empty if blank."""
+    if not val or len(val) < 4:
+        return "****" if val else ""
+    return "*" * (len(val) - 4) + val[-4:]
+
+
 @app.get("/api/settings")
 def api_settings():
     from pa_agent.config.paths import SETTINGS_JSON_PATH
@@ -296,6 +303,7 @@ def api_settings():
             "model": s.provider.model,
             "base_url": s.provider.base_url,
             "api_key_configured": bool(s.provider.api_key),
+            "api_key_masked": _mask_secret(s.provider.api_key) if s.provider.api_key else "",
             "thinking": s.provider.thinking,
             "reasoning_effort": s.provider.reasoning_effort,
             "context_window": s.provider.context_window,
@@ -307,8 +315,62 @@ def api_settings():
             "last_timeframe": s.general.last_timeframe,
             "analysis_bar_count": s.general.analysis_bar_count,
             "decision_stance": s.general.decision_stance,
+            "decision_confidence_threshold": s.general.decision_confidence_threshold,
+            "keep_analysis": s.general.keep_analysis,
+            "enable_next_bar_prediction": s.general.enable_next_bar_prediction,
+        },
+        "validation": {
+            "normalization_mode": s.validation.normalization_mode,
+            "retry_enabled": s.validation.retry_enabled,
+            "retry_max": s.validation.retry_max,
+        },
+        "feishu": {
+            "enabled": s.feishu.enabled,
+            "webhook_url": s.feishu.webhook_url,
+            "notify_on_order_only": s.feishu.notify_on_order_only,
+        },
+        "exchange_api": {
+            "api_key_masked": _mask_secret(s.exchange_api.api_key),
+            "secret_masked": _mask_secret(s.exchange_api.secret),
+            "password_masked": _mask_secret(s.exchange_api.password),
+            "configured": bool(s.exchange_api.api_key and s.exchange_api.secret),
+        },
+        "trading": {
+            "auto_trade_enabled": s.trading.auto_trade_enabled,
+            "trade_amount": s.trading.trade_amount,
+            "max_risk_per_trade_pct": s.trading.max_risk_per_trade_pct,
+            "min_confidence": s.trading.min_confidence,
+            "quote_currency": s.trading.quote_currency,
         },
     }
+
+
+@app.post("/api/settings")
+def api_update_settings(body: dict):
+    """Update arbitrary settings fields. Only sends non-None values.
+
+    Example:
+      {"general": {"last_ccxt_exchange": "okx", "last_symbol": "ETH/USDT"}, ...}
+    """
+    from pa_agent.config.paths import SETTINGS_JSON_PATH
+    from pa_agent.config.settings import load_settings, save_settings, Settings
+
+    s = load_settings(SETTINGS_JSON_PATH)
+
+    def _merge(target: object, updates: dict) -> None:
+        for key, val in updates.items():
+            if val is not None and hasattr(target, key):
+                setattr(target, key, val)
+
+    for section, fields in body.items():
+        if not isinstance(fields, dict):
+            continue
+        section_obj = getattr(s, section, None)
+        if section_obj is not None:
+            _merge(section_obj, fields)
+
+    save_settings(s, SETTINGS_JSON_PATH)
+    return {"ok": True}
 
 
 @app.post("/api/settings/exchange")
@@ -321,6 +383,81 @@ def api_set_exchange(exchange: str = Form(...)):
     s.general.last_data_source = "ccxt"
     save_settings(s, SETTINGS_JSON_PATH)
     return {"ok": True, "exchange": exchange}
+
+
+@app.post("/api/settings/test-exchange")
+async def api_test_exchange(body: dict):
+    """Test exchange API connection with given credentials.
+
+    If credentials are omitted, uses saved settings.
+    Returns True/False + message.
+    """
+    from pa_agent.config.paths import SETTINGS_JSON_PATH
+    from pa_agent.config.settings import load_settings
+
+    s = load_settings(SETTINGS_JSON_PATH)
+    ex_id = body.get("exchange") or s.general.last_ccxt_exchange or "okx"
+
+    try:
+        import ccxt
+    except ImportError:
+        return {"ok": False, "message": "CCXT 未安装"}
+
+    try:
+        ex_class = getattr(ccxt, ex_id)
+        ex = ex_class()
+        markets = await asyncio.get_event_loop().run_in_executor(None, ex.load_markets)
+        return {
+            "ok": True,
+            "message": f"✅ {ex_id} 连接成功, {len(markets)} 个交易对可用",
+            "market_count": len(markets),
+        }
+    except Exception as e:
+        return {"ok": False, "message": f"❌ {ex_id} 连接失败: {e}"}
+
+
+@app.post("/api/settings/test-exchange-auth")
+async def api_test_exchange_auth(body: dict):
+    """Test exchange API with authentication (real money connection test).
+
+    ⚠️ 不会下单，只做连接和余额查询。
+    """
+    api_key = body.get("api_key", "")
+    secret = body.get("secret", "")
+    password = body.get("password", "")
+    exchange_id = body.get("exchange", "")
+
+    if not api_key or not secret:
+        return {"ok": False, "message": "API Key 和 Secret 不能为空"}
+
+    try:
+        import ccxt
+    except ImportError:
+        return {"ok": False, "message": "CCXT 未安装"}
+
+    try:
+        ex_class = getattr(ccxt, exchange_id)
+        kwargs = {"apiKey": api_key, "secret": secret}
+        if password:
+            kwargs["password"] = password
+        ex = ex_class(kwargs)
+
+        balance = await asyncio.get_event_loop().run_in_executor(
+            None, ex.fetch_balance
+        )
+        total_usdt = balance.get("USDT", {}).get("total", 0)
+        total_btc = balance.get("BTC", {}).get("total", 0)
+
+        return {
+            "ok": True,
+            "message": f"✅ {exchange_id} 认证成功",
+            "balance": {
+                "USDT": round(total_usdt, 2) if total_usdt else 0,
+                "BTC": round(total_btc, 6) if total_btc else 0,
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "message": f"❌ 认证失败: {e}"}
 
 
 # ── Web 页面 ────────────────────────────────────────────────────────────────

@@ -19,31 +19,11 @@
   </nav>
 
   <main class="main">
-    <div class="card">
-      <h2>系统设置</h2>
-      <div id="settingsContent"></div>
-    </div>
-
-    <div class="card">
-      <h2>API Key 管理</h2>
-      <p style="color:#888;margin-bottom:12px">API Key 存储在服务器 config/settings.json 中，需通过 SSH 编辑。</p>
-      <pre class="json-display" style="background:#1e1e2e;padding:16px;border-radius:8px">
-# 在 VPS 上执行：
-nano config/settings.json
-
-# 找到 provider 字段修改：
-{
-  "provider": {
-    "api_key": "sk-your-deepseek-api-key",
-    "base_url": "https://api.deepseek.com",
-    "model": "deepseek-v4-flash"
-  }
-}
-      </pre>
-    </div>
+    <div id="settingsRoot"></div>
   </main>
 
+  <div id="toast" class="toast" style="display:none"></div>
+
   <script src="/static/dashboard.js"></script>
-  <script>loadSettings()</script>
 </body>
 </html>

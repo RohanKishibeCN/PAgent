@@ -158,6 +158,33 @@ class PushPlusSettings(BaseModel):
     token: str = ""
 
 
+class ExchangeApiSettings(BaseModel):
+    """Exchange API credentials for auto-trading (never committed to Git)."""
+    model_config = ConfigDict(extra="ignore")
+
+    api_key: str = ""
+    secret: str = ""
+    password: str = ""
+    #: Only "trade" + "read" permissions in exchange API settings.
+    #: Never enable "withdraw" permission.
+
+
+class TradingSettings(BaseModel):
+    """Auto-trading behaviour settings."""
+    model_config = ConfigDict(extra="ignore")
+
+    #: Master switch: when False, no order is ever sent to the exchange.
+    auto_trade_enabled: bool = False
+    #: Max trade amount in base currency (e.g. 0.001 BTC, 0.01 ETH).
+    trade_amount: float = Field(default=0.001, ge=0.0001, le=100)
+    #: Max risk per trade as fraction of account (0.01 = 1%).
+    max_risk_per_trade_pct: float = Field(default=0.01, ge=0.001, le=0.5)
+    #: Minimum confidence to auto-trade (0-100).
+    min_confidence: int = Field(default=60, ge=0, le=100)
+    #: Use USDT quote currency for fixed-size orders.
+    quote_currency: str = "USDT"
+
+
 class Settings(BaseModel):
     """Root settings object persisted to config/settings.json."""
     model_config = ConfigDict(extra="ignore")
@@ -169,6 +196,8 @@ class Settings(BaseModel):
     feishu: FeishuSettings = Field(default_factory=FeishuSettings)
     pushplus: PushPlusSettings = Field(default_factory=PushPlusSettings)
     tushare: TushareSettings = Field(default_factory=TushareSettings)
+    exchange_api: ExchangeApiSettings = Field(default_factory=ExchangeApiSettings)
+    trading: TradingSettings = Field(default_factory=TradingSettings)
 
 
 def provider_api_key_configured(settings: Settings | None) -> bool:
@@ -176,6 +205,40 @@ def provider_api_key_configured(settings: Settings | None) -> bool:
     if settings is None:
         return False
     return bool((settings.provider.api_key or "").strip())
+
+
+# ── .env support ──────────────────────────────────────────────────────────────
+
+def load_dotenv(path: Path | None = None) -> None:
+    """Load key=value pairs from .env file into os.environ (no external dep)."""
+    from pa_agent.config.paths import PROJECT_ROOT
+
+    env_path = path or PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip("\"'")
+            if key and not os.environ.get(key):
+                os.environ[key] = val
+    except OSError:
+        pass
+
+
+def resolve_api_keys_from_env(settings: "Settings") -> None:
+    """Override sensitive fields from environment variables when set."""
+    if not settings.provider.api_key and os.environ.get("AI_API_KEY"):
+        settings.provider.api_key = os.environ["AI_API_KEY"]
+    if not settings.exchange_api.api_key and os.environ.get("EXCHANGE_API_KEY"):
+        settings.exchange_api.api_key = os.environ["EXCHANGE_API_KEY"]
+    if not settings.exchange_api.secret and os.environ.get("EXCHANGE_SECRET"):
+        settings.exchange_api.secret = os.environ["EXCHANGE_SECRET"]
+    if not settings.exchange_api.password and os.environ.get("EXCHANGE_PASSWORD"):
+        settings.exchange_api.password = os.environ["EXCHANGE_PASSWORD"]
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
@@ -222,13 +285,18 @@ def load_settings(path: Path | None = None) -> "Settings":
     """Load settings from *path* (default: SETTINGS_JSON_PATH).
 
     Returns default Settings and writes them to disk if the file is absent.
+    Also loads .env file for sensitive fields.
     """
     from pa_agent.config.paths import SETTINGS_JSON_PATH
 
     path = path or SETTINGS_JSON_PATH
 
+    # Load .env overrides first (before reading settings.json)
+    load_dotenv()
+
     if not path.exists():
         defaults = Settings()
+        resolve_api_keys_from_env(defaults)
         save_settings(defaults, path)
         return defaults
 
@@ -258,6 +326,7 @@ def load_settings(path: Path | None = None) -> "Settings":
 
     migrated_feishu = _migrate_legacy_feishu_json(raw, path)
     settings = Settings.model_validate(raw)
+    resolve_api_keys_from_env(settings)
     dirty = migrated_feishu
     if settings.pushplus.enabled and not settings.pushplus.token.strip():
         if not (os.environ.get("PUSHPLUS_TOKEN") or "").strip():
