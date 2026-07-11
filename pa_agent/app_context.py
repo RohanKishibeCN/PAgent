@@ -71,9 +71,12 @@ class AppContext:
 
         apply_kline_adjust_from_settings(settings)
         ds_kind = normalize_data_source_kind(
-            getattr(settings.general, "last_data_source", "mt5")
+            getattr(settings.general, "last_data_source", "ccxt")
         )
-        data_source = create_data_source(ds_kind)
+        data_source = create_data_source(
+            ds_kind,
+            ccxt_exchange_id=getattr(settings.general, "last_ccxt_exchange", "binance") or "binance",
+        )
 
         # Subscribe to the last-used symbol/timeframe from settings
         try:

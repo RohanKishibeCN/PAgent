@@ -1,4 +1,4 @@
-﻿"""Main application window for PA Agent."""
+"""Main application window for PA Agent."""
 from __future__ import annotations
 
 import logging
@@ -1209,8 +1209,8 @@ class MainWindow(QMainWindow):
             self._apply_gold_defaults_for_data_source(kind)
 
             # Restore saved TV exchange before applying to data source
+            settings = getattr(self._ctx, "settings", None)
             if kind == "tradingview":
-                settings = getattr(self._ctx, "settings", None)
                 saved_ex = ""
                 if settings is not None:
                     saved_ex = getattr(settings.general, 'last_tradingview_exchange', '') or ''
@@ -1225,7 +1225,14 @@ class MainWindow(QMainWindow):
             symbol = self._symbol_combo.currentText().strip()
             timeframe = self._tf_combo.currentText()
 
-            new_source = create_data_source(kind)
+            new_source = create_data_source(
+                kind,
+                ccxt_exchange_id=(
+                    getattr(settings.general, "last_ccxt_exchange", "binance") or "binance"
+                    if settings is not None
+                    else "binance"
+                ),
+            )
             # Wire auto-probe status callback for TV
             from pa_agent.data.tradingview import TradingViewSource
             if isinstance(new_source, TradingViewSource):

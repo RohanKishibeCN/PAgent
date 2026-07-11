@@ -11,6 +11,7 @@ from pa_agent.data.market_defaults import (
 )
 
 DataSourceKind = Literal[
+    "ccxt",
     "mt5",
     "tradingview",
     "akshare",
@@ -21,6 +22,7 @@ DataSourceKind = Literal[
 
 # UI-visible sources only — ``eastmoney`` is config/programmatic, not listed here.
 DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = (
+    ("ccxt", "CCXT (加密货币)"),
     ("mt5", "MT5"),
     ("tradingview", "TradingView"),
 )
@@ -30,6 +32,7 @@ _HIDDEN_KINDS: frozenset[DataSourceKind] = frozenset(
 )
 
 _DEFAULT_SYMBOLS: dict[DataSourceKind, str] = {
+    "ccxt": "BTC/USDT",
     "mt5": GOLD_MT5_SYMBOL,
     "tradingview": GOLD_TV_SYMBOL,
     "akshare": A_SHARE_DEFAULT_SYMBOL,
@@ -45,11 +48,11 @@ def default_tradingview_exchange() -> str:
 
 
 def normalize_data_source_kind(kind: str | None) -> DataSourceKind:
-    """Return a supported data-source kind, defaulting to MT5."""
+    """Return a supported data-source kind, defaulting to CCXT."""
     supported = {k for k, _ in DATA_SOURCE_CHOICES} | _HIDDEN_KINDS
     if kind in supported:
         return kind  # type: ignore[return-value]
-    return "mt5"
+    return "ccxt"
 
 
 def data_source_label(kind: str | None) -> str:
@@ -66,6 +69,8 @@ def data_source_label(kind: str | None) -> str:
         return "AkShare"
     if normalized == "yfinance":
         return "YFinance"
+    if normalized == "ccxt":
+        return "CCXT (加密货币)"
     return "MT5"
 
 
@@ -73,8 +78,11 @@ def default_symbol_for_kind(kind: str | None) -> str:
     return _DEFAULT_SYMBOLS[normalize_data_source_kind(kind)]
 
 
-def create_data_source(kind: str | None) -> DataSource:
-    """Instantiate a fresh data source for *kind* (not connected)."""
+def create_data_source(kind: str | None, *, ccxt_exchange_id: str = "binance") -> DataSource:
+    """Instantiate a fresh data source for *kind* (not connected).
+
+    *ccxt_exchange_id* is used only when kind == "ccxt", e.g. "binance", "okx".
+    """
     normalized = normalize_data_source_kind(kind)
     if normalized == "tradingview":
         from pa_agent.data.tradingview import TradingViewSource
@@ -98,6 +106,10 @@ def create_data_source(kind: str | None) -> DataSource:
         from pa_agent.data.yfinance_source import YFinanceSource
 
         return YFinanceSource()
+    if normalized == "ccxt":
+        from pa_agent.data.ccxt_source import CcxtSource
+
+        return CcxtSource(exchange_id=ccxt_exchange_id)
     from pa_agent.data.mt5 import MT5Source
 
     return MT5Source()

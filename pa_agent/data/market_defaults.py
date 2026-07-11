@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import re
 
+# Default crypto symbols for CCXT data source
+CCXT_DEFAULT_SYMBOL = "BTC/USDT"
+CCXT_DEFAULT_SYMBOL_ALT = "ETH/USDT"
+
 # MT5 broker spot gold (suffix varies by broker; m = common micro/mini suffix)
 GOLD_MT5_SYMBOL = "XAUUSDm"
 
@@ -106,6 +110,12 @@ def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
         if not code or not _looks_like_ashare_code(code):
             return A_SHARE_DEFAULT_SYMBOL
         return code
+    if kind == "ccxt":
+        if "/" in sym and sym.count("/") == 1:
+            return sym
+        if not sym or is_likely_crypto_symbol(sym):
+            return CCXT_DEFAULT_SYMBOL
+        return CCXT_DEFAULT_SYMBOL
     if kind == "tradingview":
         code = normalize_ashare_tv_code(sym)
         if _is_ashare_tv_code(code):
@@ -474,7 +484,7 @@ def resolve_tv_gold_pair(
 
 def migrate_general_gold_defaults(general: dict) -> None:
     """In-place migration: gold symbol + valid TV exchange/symbol pair."""
-    kind = str(general.get("last_data_source", "mt5"))
+    kind = str(general.get("last_data_source", "ccxt"))
     sym = str(general.get("last_symbol", ""))
     general["last_symbol"] = normalize_gold_symbol_for_kind(kind, sym)
     if kind == "tradingview":
@@ -484,6 +494,8 @@ def migrate_general_gold_defaults(general: dict) -> None:
         )
         general["last_tradingview_exchange"] = ex
         general["last_symbol"] = sym
+    elif kind == "ccxt":
+        general["last_tradingview_exchange"] = ""
     else:
         general["last_tradingview_exchange"] = normalize_gold_tv_exchange(
             str(general.get("last_tradingview_exchange", ""))
