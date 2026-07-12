@@ -51,8 +51,9 @@ source .venv/bin/activate
 echo "[3/6] 安装依赖..."
 pip install --quiet --upgrade pip
 pip install --quiet \
-    ccxt pydantic numpy pandas openai tiktoken jsonschema cryptography \
-    fastapi uvicorn jinja2 aiofiles python-multipart
+    ccxt pydantic numpy pandas openai tiktoken jsonschema cryptography
+# Web 框架：锁定已知兼容版本（Jinja2 >= 3.1.3 与 Starlette 缓存机制冲突）
+pip install --quiet "jinja2<3.1.3" "fastapi>=0.110" "uvicorn" "aiofiles" "python-multipart"
 echo "  ✅ 依赖安装完成"
 
 # 4. 数据目录
