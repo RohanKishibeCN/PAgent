@@ -1,0 +1,28 @@
+[Unit]
+Description=PAgent Web Dashboard
+Documentation=https://github.com/RohanKishibeCN/PAgent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/PAgent
+ExecStart=/opt/PAgent/.venv/bin/python3 /opt/PAgent/web_server.py --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+# 日志
+StandardOutput=append:/opt/PAgent/logs/web.log
+StandardError=append:/opt/PAgent/logs/web.log
+
+# 环境变量（从 .env 读取；如需代理取消下面注释）
+# Environment=https_proxy=http://127.0.0.1:7890
+# Environment=http_proxy=http://127.0.0.1:7890
+
+[Install]
+WantedBy=multi-user.target
