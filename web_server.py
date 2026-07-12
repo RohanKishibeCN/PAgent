@@ -23,7 +23,6 @@ import uvicorn
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 _here = Path(__file__).resolve().parent
 if str(_here) not in sys.path:
@@ -61,10 +60,31 @@ for _mod_name in (
     sys.modules[_mod_name] = type(sys)(_mod_name)
 
 app = FastAPI(title="PA Agent Web Dashboard", version="1.0.0")
-templates = Jinja2Templates(directory=str(_here / "web" / "templates"))
 STATIC_DIR = _here / "web" / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# ── 模板渲染（绕过 Jinja2>=3.1.2 缓存 bug）─────────────────────────────────
+from jinja2 import Environment, FileSystemLoader as _FSL
+_from_jinja_env = Environment(loader=_FSL(str(_here / "web" / "templates")), auto_reload=False)
+
+
+def _render(name: str, context: dict) -> str:
+    """Render an HTML template with Jinja2, bypassing broken TemplateResponse cache."""
+    return _from_jinja_env.get_template(name).render(**context)
+
+
+class _Templates:
+    """Drop-in replacement for starlette.templating.Jinja2Templates."""
+
+    def TemplateResponse(self, name: str, context: dict) -> HTMLResponse:
+        from starlette.responses import HTMLResponse
+
+        html = _render(name, context)
+        return HTMLResponse(content=html, media_type="text/html")
+
+
+templates = _Templates()
 
 
 # ── API: 服务状态 ────────────────────────────────────────────────────────────
