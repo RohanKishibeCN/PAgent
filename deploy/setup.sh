@@ -38,7 +38,8 @@ fi
 
 # 2. 虚拟环境
 echo "[2/6] 创建虚拟环境..."
-if [ ! -d ".venv" ]; then
+if [ ! -d ".venv" ] || [ ! -f ".venv/bin/activate" ]; then
+    rm -rf .venv
     $PYTHON -m venv .venv
     echo "  ✅ 已创建 .venv"
 else
