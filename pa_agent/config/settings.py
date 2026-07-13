@@ -139,6 +139,8 @@ class FeishuSettings(BaseModel):
     secret: str = ""
     app_id: str = ""
     app_secret: str = ""
+    #: 飞书群 chat_id（通过 app API 发消息，替代 webhook）
+    chat_id: str = ""
     #: True = only push when there is an order opportunity.
     notify_on_order_only: bool = True
 

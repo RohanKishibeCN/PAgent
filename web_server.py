@@ -502,6 +502,9 @@ def api_settings():
             "enabled": s.feishu.enabled,
             "webhook_url": s.feishu.webhook_url,
             "notify_on_order_only": s.feishu.notify_on_order_only,
+            "app_id_masked": _mask_secret(s.feishu.app_id) if s.feishu.app_id else "",
+            "chat_id": s.feishu.chat_id,
+            "app_mode": bool(s.feishu.app_id and s.feishu.secret and s.feishu.chat_id),
         },
         "exchange_api": {
             "api_key_masked": _mask_secret(s.exchange_api.api_key),
@@ -632,6 +635,38 @@ async def api_test_exchange_auth(body: dict):
         }
     except Exception as e:
         return {"ok": False, "message": f"❌ 认证失败: {e}"}
+
+
+# ── API: 飞书推送测试 ─────────────────────────────────────────────────────────
+
+@app.post("/api/feishu/test")
+async def api_feishu_test(body: dict):
+    """发送测试消息到飞书群."""
+    from pa_agent.config.paths import SETTINGS_JSON_PATH
+    from pa_agent.config.settings import load_settings, save_settings
+
+    s = load_settings(SETTINGS_JSON_PATH)
+
+    # Update feishu settings if provided
+    feishu_body = body.get("feishu", {})
+    dirty = False
+    for key in ("app_id", "app_secret", "chat_id", "webhook_url", "enabled"):
+        if key in feishu_body:
+            setattr(s.feishu, key, feishu_body[key])
+            dirty = True
+    if dirty:
+        save_settings(s, SETTINGS_JSON_PATH)
+
+    from pa_agent.notify.feishu_notifier import send_text_to_group
+
+    text = (
+        f"🧪 PA Agent 飞书推送测试\n"
+        f"时间: {datetime.now().isoformat()}\n"
+        f"状态: 连接测试成功 ✅\n"
+        f"这是来自 VPS 的测试消息，后续分析结果将通过此通道推送。"
+    )
+    ok = send_text_to_group(text, s)
+    return {"ok": ok, "message": "发送成功 ✅" if ok else "发送失败，请检查 App ID/Secret/群 ID 配置"}
 
 
 # ── Web 页面 ────────────────────────────────────────────────────────────────

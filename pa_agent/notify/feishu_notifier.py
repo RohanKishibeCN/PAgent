@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import time
 import threading
@@ -287,6 +288,61 @@ def _build_card(
         },
     }
     return {"msg_type": "interactive", "card": card}
+
+
+# ── 发送文本消息到群（通过 app API，无需 webhook）────────────────────────────
+
+_SEND_MSG_URL = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
+
+
+def send_text_to_group(text: str, settings: "Settings | None" = None) -> bool:
+    """通过飞书自建应用 API 发送纯文本消息到群聊。
+
+    无需 webhook，使用 app_id + app_secret + chat_id 即可。
+    需在飞书开放平台为应用授予 im:message 权限。
+    """
+    cfg = _feishu_config_dict(settings)
+    app_id = (cfg.get("app_id") or "").strip()
+    app_secret = (cfg.get("app_secret") or "").strip()
+    chat_id = (cfg.get("chat_id") or "").strip()
+
+    if not (app_id and app_secret and chat_id):
+        logger.warning("飞书 API 推送: app_id/app_secret/chat_id 未完整配置")
+        return False
+
+    try:
+        import requests
+    except ImportError:
+        logger.warning("飞书推送: requests 未安装")
+        return False
+
+    token = _token_cache.get(app_id, app_secret)
+    if not token:
+        logger.warning("飞书推送: 无法获取 access_token")
+        return False
+
+    payload = {
+        "receive_id": chat_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}),
+    }
+    try:
+        resp = requests.post(
+            _SEND_MSG_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=_REQUEST_TIMEOUT_S,
+        )
+        data = resp.json()
+        if data.get("code") == 0:
+            logger.info("飞书消息推送成功")
+            return True
+        else:
+            logger.warning("飞书消息推送失败: %s", data)
+            return False
+    except Exception as exc:
+        logger.warning("飞书消息推送异常: %s", exc)
+        return False
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────────

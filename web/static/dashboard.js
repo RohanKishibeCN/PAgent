@@ -282,6 +282,23 @@ async function loadSettingsUI() {
     html += settingsCard("飞书通知", `
       <label class="toggle"><input type="checkbox" id="s_feishu_enabled" ${data.feishu?.enabled ? "checked" : ""}><span class="toggle-slider"></span></label>
     `, "feishu_enable");
+
+    const fel = data.feishu || {};
+    html += `<div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#888">
+      <strong>API 模式（推荐）</strong>：使用自建应用 App ID + Secret 直接发送到群。<br>
+      <strong>Webhook 模式</strong>：在群里创建自定义机器人，复制 Webhook URL。<br>
+      两个模式选一个配置即可。
+    </div>`;
+    html += settingsCard("App ID", `<input type="text" id="s_feishu_appid" value="${fel.app_id_masked || ''}" class="setting-input" style="width:300px" placeholder="cli_...">`, "feishu_app_id");
+    html += settingsCard("App Secret", `<input type="password" id="s_feishu_secret" placeholder="${fel.app_id_masked ? '(已配置，输入新值覆盖)' : '输入 App Secret'}" class="setting-input" style="width:400px">`, "feishu_secret");
+    html += settingsCard("群 ID", `<input type="text" id="s_feishu_chatid" value="${fel.chat_id || ''}" class="setting-input" style="width:400px" placeholder="oc_...">`, "feishu_chatid");
+    html += `<div style="display:flex;gap:12px;margin-top:12px">
+      <button class="btn btn-sm btn-primary" onclick="testFeishu()">发送测试消息</button>
+      <span id="s_feishu_result" style="font-size:12px;line-height:32px"></span>
+    </div>`;
+
+    // Webhook 方式
+    html += '<hr style="border-color:#2a2a4a;margin:16px 0">';
     html += settingsCard("Webhook URL", `<input type="text" id="s_feishu_url" value="${data.feishu?.webhook_url || ''}" class="setting-input" style="width:400px" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">`, "feishu_url");
     html += '</div>';
 
@@ -397,7 +414,12 @@ async function saveAllSettings() {
   body.feishu = {
     enabled: chkVal("s_feishu_enabled"),
     webhook_url: getVal("s_feishu_url"),
+    chat_id: getVal("s_feishu_chatid"),
   };
+  const felAppId = document.getElementById("s_feishu_appid")?.value?.trim();
+  if (felAppId && !felAppId.startsWith("***")) body.feishu.app_id = felAppId;
+  const felSecret = document.getElementById("s_feishu_secret")?.value?.trim();
+  if (felSecret) body.feishu.secret = felSecret;
 
   try {
     const res = await fetch("/api/settings", {
@@ -422,6 +444,37 @@ function getVal(id) { return document.getElementById(id)?.value || ""; }
 function intVal(id) { return parseInt(document.getElementById(id)?.value) || 0; }
 function floatVal(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
 function chkVal(id) { return document.getElementById(id)?.checked || false; }
+
+// ── 测试飞书推送 ──
+async function testFeishu() {
+  const el = document.getElementById("s_feishu_result");
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
+  el.textContent = "⏳ 发送中...";
+  try {
+    const body = {
+      feishu: {
+        enabled: true,
+        app_id: (document.getElementById("s_feishu_appid")?.value || "").trim(),
+        secret: (document.getElementById("s_feishu_secret")?.value || "").trim(),
+        chat_id: (document.getElementById("s_feishu_chatid")?.value || "").trim(),
+        webhook_url: document.getElementById("s_feishu_url")?.value || "",
+      }
+    };
+    const res = await fetch("/api/feishu/test", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    el.textContent = data.message;
+    el.style.color = data.ok ? "#22c55e" : "#ef4444";
+  } catch(err) {
+    el.textContent = "❌ 请求失败: " + err.message;
+    el.style.color = "#ef4444";
+  }
+  if (btn) btn.disabled = false;
+}
 
 // ── 分析页加载默认交易所 ──
 async function loadExchangeSetting() {
