@@ -141,6 +141,10 @@ class FeishuSettings(BaseModel):
     app_secret: str = ""
     #: 飞书群 chat_id（通过 app API 发消息，替代 webhook）
     chat_id: str = ""
+    #: Lark（国际版）或 Feishu（中国版）API 基础域名
+    #: Lark 国际版 = "open.larksuite.com"
+    #: Feishu 中国版 = "open.feishu.cn"
+    base_url: str = "open.larksuite.com"
     #: True = only push when there is an order opportunity.
     notify_on_order_only: bool = True
 

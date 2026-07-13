@@ -39,9 +39,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ── 飞书 Open API 端点 ─────────────────────────────────────────────────────────
-_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
-_IMAGE_UPLOAD_URL = "https://open.feishu.cn/open-apis/im/v1/images"
+# ── 飞书/Lark Open API 端点（动态）──────────────────────────────────────────
+# base_url 从 settings.json 的 feishu.base_url 读取
+# Lark 国际版：open.larksuite.com
+# Feishu 中国版：open.feishu.cn
+_DEFAULT_BASE = "open.larksuite.com"
+
+
+def _api_url(settings: "Settings | None" = None) -> tuple[str, str]:
+    """Return (token_url, send_msg_url) based on configured base_url."""
+    base = _DEFAULT_BASE
+    if settings is not None:
+        base = (settings.feishu.base_url or _DEFAULT_BASE).strip()
+    else:
+        try:
+            from pa_agent.config.paths import SETTINGS_JSON_PATH
+            from pa_agent.config.settings import load_settings
+            s = load_settings(SETTINGS_JSON_PATH)
+            base = (s.feishu.base_url or _DEFAULT_BASE).strip()
+        except Exception:
+            pass
+    return (
+        f"https://{base}/open-apis/auth/v3/tenant_access_token/internal",
+        f"https://{base}/open-apis/im/v1/messages?receive_id_type=chat_id",
+    )
 
 # tenant_access_token 有效期 2 小时；提前 5 分钟刷新
 _TOKEN_TTL_BUFFER_S = 300
@@ -66,8 +87,9 @@ class _TokenCache:
         try:
             import requests  # type: ignore[import]
 
+            token_url, _ = _api_url()
             resp = requests.post(
-                _TOKEN_URL,
+                token_url,
                 json={"app_id": app_id, "app_secret": app_secret},
                 headers={"Content-Type": "application/json"},
                 timeout=_REQUEST_TIMEOUT_S,
@@ -291,8 +313,6 @@ def _build_card(
 
 
 # ── 发送文本消息到群（通过 app API，无需 webhook）────────────────────────────
-
-_SEND_MSG_URL = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
 
 
 def send_text_to_group(text: str, settings: "Settings | None" = None) -> bool:

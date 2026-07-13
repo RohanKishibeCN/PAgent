@@ -55,7 +55,6 @@ for _mod_name in (
     "pa_agent.gui.ai_sidebar", "pa_agent.gui.settings_dialog",
     "pa_agent.gui.feishu_settings_dialog", "pa_agent.gui.general_settings_dialog",
     "pa_agent.gui.ai_model_settings_dialog", "pa_agent.gui.order_opportunity",
-    "pa_agent.notify",
 ):
     sys.modules[_mod_name] = type(sys)(_mod_name)
 
