@@ -450,22 +450,12 @@ async function testFeishu() {
   const el = document.getElementById("s_feishu_result");
   const btn = event?.target;
   if (btn) btn.disabled = true;
-  el.textContent = "⏳ 发送中...";
+  el.textContent = "⏳ 保存设置并发送测试...";
   try {
-    const body = {
-      feishu: {
-        enabled: true,
-        app_id: (document.getElementById("s_feishu_appid")?.value || "").trim(),
-        app_secret: (document.getElementById("s_feishu_secret")?.value || "").trim(),
-        chat_id: (document.getElementById("s_feishu_chatid")?.value || "").trim(),
-        webhook_url: document.getElementById("s_feishu_url")?.value || "",
-      }
-    };
-    const res = await fetch("/api/feishu/test", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(body),
-    });
+    // First save settings (this correctly skips masked values)
+    await saveAllSettings();
+    // Now call test endpoint that reads from saved config
+    const res = await fetch("/api/feishu/test", { method: "POST" });
     const data = await res.json();
     el.textContent = data.message;
     el.style.color = data.ok ? "#22c55e" : "#ef4444";

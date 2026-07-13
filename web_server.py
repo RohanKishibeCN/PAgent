@@ -639,24 +639,13 @@ async def api_test_exchange_auth(body: dict):
 # ── API: 飞书推送测试 ─────────────────────────────────────────────────────────
 
 @app.post("/api/feishu/test")
-async def api_feishu_test(body: dict):
-    """发送测试消息到飞书群."""
+async def api_feishu_test():
+    """发送测试消息到飞书群，配置从已保存的 settings.json 读取."""
     try:
         from pa_agent.config.paths import SETTINGS_JSON_PATH
-        from pa_agent.config.settings import load_settings, save_settings
+        from pa_agent.config.settings import load_settings
 
         s = load_settings(SETTINGS_JSON_PATH)
-
-        # Update feishu settings if provided
-        feishu_body = body.get("feishu", {})
-        dirty = False
-        for key in ("app_id", "app_secret", "chat_id", "webhook_url", "enabled"):
-            if key in feishu_body:
-                setattr(s.feishu, key, feishu_body[key])
-                dirty = True
-        if dirty:
-            save_settings(s, SETTINGS_JSON_PATH)
-
         from pa_agent.notify.feishu_notifier import send_text_to_group
 
         text = (
