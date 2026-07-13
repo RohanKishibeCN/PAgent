@@ -168,6 +168,63 @@ def _save_web_record(result: dict) -> None:
         pass
 
 
+def _notify_feishu(result: dict) -> None:
+    """Send analysis result to Lark/Feishu group after a completed analysis."""
+    if result.get("status") not in ("success", "data_only", "preflight_failed", "no_ai_key"):
+        return
+    try:
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
+        from pa_agent.config.settings import load_settings
+        from pa_agent.notify.feishu_notifier import send_text_to_group
+
+        s = load_settings(SETTINGS_JSON_PATH)
+        if not s.feishu.enabled:
+            return
+
+        symbol = result.get("symbol", "?")
+        timeframe = result.get("timeframe", "?")
+        ks = result.get("kline_summary") or {}
+        price = ks.get("current_price", "?")
+        diagnosis = result.get("diagnosis") or {}
+        direction = diagnosis.get("direction", "?")
+        decision_data = result.get("decision") or {}
+        dec = decision_data.get("decision") if isinstance(decision_data.get("decision"), dict) else {}
+        order_type = dec.get("order_type", "—")
+        order_dir = dec.get("order_direction", "—")
+        entry = dec.get("entry_price", "—")
+        stop = dec.get("stop_loss_price", "—")
+        tp1 = dec.get("take_profit_price", "—")
+        confidence = dec.get("trade_confidence", "—")
+
+        dir_emoji = {"bullish": "📈", "bearish": "📉", "neutral": "➡️"}.get(str(direction).lower(), "➡️")
+
+        lines = [
+            f"📊 分析结果 — {symbol} {timeframe}",
+            f"当前价格: {price}",
+            f"方向: {dir_emoji} {direction}",
+            f"下单类型: {order_type}",
+        ]
+        if order_dir and order_dir != "—":
+            lines.append(f"方向: {order_dir}")
+        if entry != "—":
+            lines.append(f"入场: {entry}")
+        if stop != "—":
+            lines.append(f"止损: {stop}")
+        if tp1 != "—":
+            lines.append(f"止盈: {tp1}")
+        if confidence != "—":
+            lines.append(f"置信度: {confidence}%")
+        if result.get("usage"):
+            usage = result["usage"]
+            total = usage.get("total_tokens", "?")
+            lines.append(f"Token: {total}")
+
+        text = "\n".join(lines)
+        send_text_to_group(text, s)
+    except Exception:
+        pass
+
+
 # ── API: 触发分析 ────────────────────────────────────────────────────────────
 
 @app.post("/api/analyze")
@@ -220,6 +277,7 @@ async def api_analyze(
         result["status"] = "error"
         result["error"] = f"数据获取失败: {exc}"
         _save_web_record(result)
+        _notify_feishu(result)
         return result
 
     # 构造 KlineFrame
@@ -262,6 +320,7 @@ async def api_analyze(
     if no_ai:
         result["status"] = "data_only"
         _save_web_record(result)
+        _notify_feishu(result)
         return result
 
     # ── 策略引擎 ────────────────────────────────────────────────────────
@@ -275,6 +334,7 @@ async def api_analyze(
         result["status"] = "preflight_failed"
         result["error"] = pf.reason
         _save_web_record(result)
+        _notify_feishu(result)
         return result
 
     direction, f23 = judge_direction(frame)
@@ -298,6 +358,7 @@ async def api_analyze(
     if not (settings.provider.api_key or "").strip():
         result["status"] = "no_ai_key"
         _save_web_record(result)
+        _notify_feishu(result)
         return result
 
     from pa_agent.ai.client_factory import create_ai_client
@@ -338,6 +399,7 @@ async def api_analyze(
     result["status"] = "success"
 
     _save_web_record(result)
+    _notify_feishu(result)
     return result
 
 
