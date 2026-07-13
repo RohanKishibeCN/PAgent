@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>统计 - PAgent</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">📊 PAgent</a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">分析</a>
+        <a href="/results" class="nav-link">历史</a>
+        <a href="/stats" class="nav-link active">统计</a>
+        <a href="/settings" class="nav-link">设置</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="card">
+      <h2>📊 分析统计汇总</h2>
+      <div id="statsGrid" class="result-grid"></div>
+    </div>
+
+    <div class="card">
+      <h2>📈 方向分布</h2>
+      <div id="directionDist" class="stats-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔍 标的分分析统计</h2>
+      <table id="symbolTable"><thead><tr><th>标的</th><th>分析次数</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>📋 最近 10 次方向</h2>
+      <div id="recentDirections" class="stats-chart"></div>
+    </div>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

@@ -9,10 +9,11 @@
 <body>
   <nav class="nav">
     <div class="nav-inner">
-      <a href="/" class="nav-logo">📊 PA Agent</a>
+      <a href="/" class="nav-logo">📊 PAgent</a>
       <div class="nav-links">
         <a href="/" class="nav-link active">分析</a>
-        <a href="/results" class="nav-link">历史记录</a>
+        <a href="/results" class="nav-link">历史</a>
+        <a href="/stats" class="nav-link">统计</a>
         <a href="/settings" class="nav-link">设置</a>
       </div>
     </div>
@@ -36,13 +37,12 @@
           </div>
           <div class="form-group">
             <label>交易对</label>
-            <select name="symbol" id="symbol" style="background:#0f0f1a;border:1px solid #2a2a4a;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:14px;min-width:180px">
+            <select name="symbol" id="symbol" class="form-select">
               <option value="BTC/USDT">BTC/USDT</option>
               <option value="ETH/USDT">ETH/USDT</option>
               <option value="SOL/USDT">SOL/USDT</option>
-              <option value="XRP/USDT">XRP/USDT</option>
               <option value="DOGE/USDT">DOGE/USDT</option>
-              <option value="BNB/USDT">BNB/USDT</option>
+              <option value="XRP/USDT">XRP/USDT</option>
             </select>
           </div>
           <div class="form-group">

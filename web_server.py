@@ -94,6 +94,81 @@ def api_status():
     return {"status": "ok", "version": "1.0.0"}
 
 
+# ── API: 交易对列表 ──────────────────────────────────────────────────────────
+
+_KNOWN_SYMBOLS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT", "XRP/USDT",
+    "BNB/USDT", "ADA/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
+    "SUI/USDT", "ARB/USDT", "OP/USDT", "MATIC/USDT", "ATOM/USDT",
+    "LTC/USDT", "BCH/USDT", "FIL/USDT", "APT/USDT", "NEAR/USDT",
+    "PEPE/USDT", "WIF/USDT", "INJ/USDT", "TIA/USDT",
+]
+
+
+@app.get("/api/markets")
+def api_markets(exchange: str = "okx"):
+    """Return known trading pairs for the symbol dropdown."""
+    return {
+        "symbols": _KNOWN_SYMBOLS,
+        "timeframes": ["15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d"],
+    }
+
+
+# ── API: 持久化分析记录 ──────────────────────────────────────────────────────
+
+from datetime import datetime
+
+
+def _save_web_record(result: dict) -> None:
+    """Write a lightweight record to records/pending/ so it appears in history."""
+    from pa_agent.config.paths import RECORDS_PENDING_DIR
+    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+
+    ts_iso = datetime.now().isoformat()
+    ts_ms = int(time.time() * 1000)
+    symbol = result.get("symbol", "UNKNOWN")
+    timeframe = result.get("timeframe", "?")
+    fname = f"web_{ts_ms}_{symbol.replace('/','_')}_{timeframe}.json"
+    path = RECORDS_PENDING_DIR / fname
+
+    diagnosis = result.get("diagnosis") or {}
+    decision_data = result.get("decision") or {}
+    dec = decision_data.get("decision") if isinstance(decision_data.get("decision"), dict) else {}
+
+    record = {
+        "meta": {
+            "timestamp_local_iso": ts_iso,
+            "timestamp_local_ms": ts_ms,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "bar_count": result.get("bar_count", 0),
+            "ai_provider": {},
+            "decision_stance": "balanced",
+        },
+        "kline_data": [],
+        "htf_text": "",
+        "stage1_messages": [],
+        "stage1_response": None,
+        "stage1_diagnosis": diagnosis,
+        "stage2_messages": [],
+        "stage2_response": None,
+        "stage2_decision": decision_data,
+        "strategy_files_used": [],
+        "experience_loaded": [],
+        "exception": {"category": "info", "debug_hint": "web_dashboard"} if result["status"] != "error" else {"category": "error", "debug_hint": result.get("error", "")},
+        "usage_total": result.get("usage", {}),
+        "web_status": result.get("status"),
+        "order_type": dec.get("order_type"),
+        "order_direction": dec.get("order_direction"),
+        "entry_price": dec.get("entry_price"),
+        "trade_confidence": dec.get("trade_confidence"),
+    }
+    try:
+        path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 # ── API: 触发分析 ────────────────────────────────────────────────────────────
 
 @app.post("/api/analyze")
@@ -145,6 +220,7 @@ async def api_analyze(
     except Exception as exc:
         result["status"] = "error"
         result["error"] = f"数据获取失败: {exc}"
+        _save_web_record(result)
         return result
 
     # 构造 KlineFrame
@@ -186,8 +262,7 @@ async def api_analyze(
 
     if no_ai:
         result["status"] = "data_only"
-        # 纯数据模式也保存到记录目录
-        _save_data_only_result(result, frame.bars)
+        _save_web_record(result)
         return result
 
     # ── 策略引擎 ────────────────────────────────────────────────────────
@@ -200,6 +275,7 @@ async def api_analyze(
     if not pf.ok:
         result["status"] = "preflight_failed"
         result["error"] = pf.reason
+        _save_web_record(result)
         return result
 
     direction, f23 = judge_direction(frame)
@@ -222,6 +298,7 @@ async def api_analyze(
     settings = load_settings(SETTINGS_JSON_PATH)
     if not (settings.provider.api_key or "").strip():
         result["status"] = "no_ai_key"
+        _save_web_record(result)
         return result
 
     from pa_agent.ai.client_factory import create_ai_client
@@ -261,71 +338,8 @@ async def api_analyze(
     result["usage"] = record.usage_total
     result["status"] = "success"
 
-    # 确保记录已持久化
-    _ensure_record_persisted(record)
-
+    _save_web_record(result)
     return result
-
-
-# ── 辅助：记录持久化 ──────────────────────────────────────────────────────────
-
-def _save_data_only_result(result: dict, bars: tuple) -> None:
-    """Save a minimal data-only result to the pending directory."""
-    from pa_agent.config.paths import RECORDS_PENDING_DIR
-    from datetime import datetime, timezone
-
-    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).astimezone()
-    ts_str = ts.strftime("%Y-%m-%d_%H-%M-%S")
-    symbol = result.get("symbol", "UNKNOWN")
-    tf = result.get("timeframe", "?")
-    filename = f"{ts_str}_{symbol}_{tf}.json"
-    fpath = RECORDS_PENDING_DIR / filename
-
-    payload = {
-        "meta": {
-            "timestamp_local_iso": ts.isoformat(),
-            "timestamp_local_ms": int(ts.timestamp() * 1000),
-            "symbol": symbol,
-            "timeframe": tf,
-            "bar_count": result.get("bar_count", 0),
-            "ai_provider": {"model": "data_only"},
-            "decision_stance": "balanced",
-        },
-        "kline_data": [b.to_dict() if hasattr(b, "to_dict") else vars(b) for b in (bars or [])],
-        "htf_text": "",
-        "stage1_messages": [],
-        "stage1_response": None,
-        "stage1_diagnosis": result.get("diagnosis"),
-        "stage2_messages": [],
-        "stage2_response": None,
-        "stage2_decision": None,
-        "strategy_files_used": [],
-        "experience_loaded": [],
-        "exception": None,
-        "usage_total": {},
-    }
-    try:
-        fpath.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def _ensure_record_persisted(record) -> None:
-    """Ensure the AnalysisRecord is written to disk."""
-    from pa_agent.config.paths import RECORDS_PENDING_DIR
-
-    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        data = record.model_dump()
-        ts_str = record.meta.timestamp_local_iso.replace(":", "-").replace("T", "_").split(".")[0]
-        symbol = record.meta.symbol.replace("/", "_")
-        filename = f"{ts_str}_{symbol}_{record.meta.timeframe}.json"
-        fpath = RECORDS_PENDING_DIR / filename
-        if not fpath.exists():
-            fpath.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
 
 
 # ── API: 历史结果列表 ──────────────────────────────────────────────────────
@@ -358,35 +372,78 @@ def api_results():
     return {"items": items, "total": len(files)}
 
 
-# ── API: 获取交易对列表 ─────────────────────────────────────────────────────
+# ── API: 统计汇总 ────────────────────────────────────────────────────────────
 
-@app.post("/api/symbols")
-async def api_symbols(body: dict):
-    """获取指定交易所的 USDT/USD 交易对列表，用于前端下拉。
-    
-    默认返回前 50 个主流交易对。
-    """
-    exchange_id = body.get("exchange") or "okx"
-    try:
-        import ccxt
-    except ImportError:
-        return {"symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"]}
+@app.get("/api/stats")
+def api_stats():
+    """Return summary statistics across all analysis records."""
+    from pa_agent.config.paths import RECORDS_PENDING_DIR
+    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(RECORDS_PENDING_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
 
-    try:
-        ex_class = getattr(ccxt, exchange_id)
-        ex = ex_class()
-        markets = await asyncio.get_event_loop().run_in_executor(None, ex.load_markets)
-        # 过滤 USDT/USD 交易对，按成交量排序取前 50
-        pairs = []
-        for sym, info in markets.items():
-            if info.get("quote") in ("USDT", "USD", "USDC") and info.get("active"):
-                pairs.append((sym, info.get("info", {}).get("vol24h", 0) if isinstance(info.get("info"), dict) else 0))
-        pairs.sort(key=lambda x: -float(x[1]) if x[1] else 0)
-        symbols = [p[0] for p in pairs[:50]]
-        return {"symbols": symbols}
-    except Exception as exc:
-        # 降级返回常见交易对
-        return {"symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT", "XRP/USDT", "BNB/USDT"]}
+    total = 0
+    with_ai = 0
+    with_order = 0
+    no_order = 0
+    errors = 0
+    confidences: list[int] = []
+    directions: dict[str, int] = {}
+    order_types: dict[str, int] = {}
+    symbols: dict[str, int] = {}
+    last_10_directions: list[str] = []
+
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            total += 1
+            meta = data.get("meta", {})
+            s1 = data.get("stage1_diagnosis") or {}
+            s2 = data.get("stage2_decision") or {}
+            dec = s2.get("decision") if isinstance(s2.get("decision"), dict) else {}
+
+            sym = meta.get("symbol", "?")
+            symbols[sym] = symbols.get(sym, 0) + 1
+
+            dir_val = s1.get("direction", "?")
+            directions[dir_val] = directions.get(dir_val, 0) + 1
+
+            if data.get("exception") and data["exception"].get("category") == "error":
+                errors += 1
+
+            ot = dec.get("order_type", "")
+            if ot and ot != "不下单":
+                with_order += 1
+                order_types[ot] = order_types.get(ot, 0) + 1
+            else:
+                no_order += 1
+
+            conf = dec.get("trade_confidence")
+            if isinstance(conf, (int, float)) and conf > 0:
+                confidences.append(int(conf))
+
+            if data.get("usage_total", {}).get("total_tokens", 0) > 0:
+                with_ai += 1
+
+            if len(last_10_directions) < 10:
+                last_10_directions.append(dir_val)
+        except Exception:
+            total += 1
+            errors += 1
+
+    avg_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0
+    return {
+        "total": total,
+        "with_ai": with_ai,
+        "with_order": with_order,
+        "no_order": no_order,
+        "errors": errors,
+        "avg_confidence": avg_confidence,
+        "max_confidence": max(confidences) if confidences else 0,
+        "direction_distribution": dict(sorted(directions.items(), key=lambda x: -x[1])),
+        "order_type_distribution": dict(sorted(order_types.items(), key=lambda x: -x[1])),
+        "symbols": dict(sorted(symbols.items(), key=lambda x: -x[1])),
+        "last_10_directions": last_10_directions,
+    }
 
 
 @app.get("/api/results/{filename}")
@@ -587,6 +644,11 @@ def index(request: Request):
 @app.get("/results", response_class=HTMLResponse)
 def results_page(request: Request):
     return templates.TemplateResponse("results.html", {"request": request})
+
+
+@app.get("/stats", response_class=HTMLResponse)
+def stats_page(request: Request):
+    return templates.TemplateResponse("stats.html", {"request": request})
 
 
 @app.get("/settings", response_class=HTMLResponse)

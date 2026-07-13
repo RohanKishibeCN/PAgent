@@ -37,41 +37,13 @@ document.addEventListener("DOMContentLoaded", function() {
         document.getElementById("loadingArea").style.display = "none";
       }
     });
-
-    // 交易所切换时刷新交易对下拉
-    const exSel = document.getElementById("exchange");
-    if (exSel) exSel.addEventListener("change", loadSymbols);
   }
 
   loadExchangeSetting();
   loadSettingsUI();
+  loadMarkets();
+  loadStats();
 });
-
-// ── 动态加载交易对 ──
-async function loadSymbols() {
-  const sel = document.getElementById("symbol");
-  if (!sel) return;
-  const exchange = document.getElementById("exchange")?.value || "okx";
-  sel.disabled = true;
-  sel.innerHTML = '<option value="">加载中...</option>';
-  try {
-    const res = await fetch("/api/symbols", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({exchange}),
-    });
-    const data = await res.json();
-    sel.innerHTML = "";
-    for (const sym of (data.symbols || [])) {
-      const opt = document.createElement("option");
-      opt.value = sym; opt.textContent = sym;
-      sel.appendChild(opt);
-    }
-  } catch(err) {
-    sel.innerHTML = '<option value="BTC/USDT">BTC/USDT</option><option value="ETH/USDT">ETH/USDT</option><option value="SOL/USDT">SOL/USDT</option>';
-  }
-  sel.disabled = false;
-}
 
 // ── 显示分析结果 ──
 function displayResult(data) {
@@ -460,6 +432,73 @@ async function loadExchangeSetting() {
     const sy = data.general?.last_symbol;
     if (ex && document.getElementById("exchange")) document.getElementById("exchange").value = ex;
     if (sy && document.getElementById("symbol")) document.getElementById("symbol").value = sy;
-    loadSymbols();
+  } catch(_) {}
+}
+
+// ── 加载交易对下拉列表 ──
+async function loadMarkets() {
+  const select = document.getElementById("symbol");
+  if (!select || select.dataset.loaded) return;
+  try {
+    const res = await fetch("/api/markets");
+    const data = await res.json();
+    data.symbols.forEach(sym => {
+      const opt = document.createElement("option");
+      opt.value = sym; opt.textContent = sym;
+      select.appendChild(opt);
+    });
+    select.dataset.loaded = "1";
+  } catch(_) {}
+}
+
+// ── 加载统计 ──
+async function loadStats() {
+  const grid = document.getElementById("statsGrid");
+  if (!grid) return;
+  try {
+    const res = await fetch("/api/stats");
+    const s = await res.json();
+
+    document.getElementById("statsGrid").innerHTML = `
+      <div class="result-item"><div class="label">总分析次数</div><div class="value">${s.total}</div></div>
+      <div class="result-item"><div class="label">AI 分析</div><div class="value">${s.with_ai}</div></div>
+      <div class="result-item"><div class="label">下单信号</div><div class="value" style="color:#22c55e">${s.with_order}</div></div>
+      <div class="result-item"><div class="label">不下单</div><div class="value">${s.no_order}</div></div>
+      <div class="result-item"><div class="label">错误</div><div class="value" style="color:${s.errors > 0 ? '#ef4444' : '#888'}">${s.errors}</div></div>
+      <div class="result-item"><div class="label">平均置信度</div><div class="value">${s.avg_confidence}%</div></div>
+      <div class="result-item"><div class="label">最高置信度</div><div class="value" style="color:#22c55e">${s.max_confidence}%</div></div>
+    `;
+
+    // 方向分布
+    const dirDiv = document.getElementById("directionDist");
+    if (dirDiv) {
+      let dh = '<div class="result-grid">';
+      for (const [k, v] of Object.entries(s.direction_distribution)) {
+        const emoji = k === "bullish" ? "📈" : k === "bearish" ? "📉" : "➡️";
+        dh += `<div class="result-item"><div class="label">${emoji} ${k}</div><div class="value">${v} 次</div></div>`;
+      }
+      dh += "</div>";
+      dirDiv.innerHTML = dh;
+    }
+
+    // 标的分布
+    const symTable = document.getElementById("symbolTable")?.querySelector("tbody");
+    if (symTable) {
+      symTable.innerHTML = "";
+      for (const [k, v] of Object.entries(s.symbols)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${k}</td><td>${v} 次</td>`;
+        symTable.appendChild(tr);
+      }
+    }
+
+    // 最近方向
+    const recentDiv = document.getElementById("recentDirections");
+    if (recentDiv && s.last_10_directions.length) {
+      recentDiv.innerHTML = s.last_10_directions.map(d => {
+        const emoji = d === "bullish" ? "🟢" : d === "bearish" ? "🔴" : "⚪";
+        return `<span title="${d}" style="font-size:20px;margin:0 2px">${emoji}</span>`;
+      }).join("");
+    }
   } catch(_) {}
 }
