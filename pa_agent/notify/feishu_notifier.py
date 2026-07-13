@@ -347,8 +347,9 @@ def send_text_to_group(text: str, settings: "Settings | None" = None) -> bool:
         "content": json.dumps({"text": text}),
     }
     try:
+        _, send_url = _api_url(settings)
         resp = requests.post(
-            _SEND_MSG_URL,
+            send_url,
             json=payload,
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             timeout=_REQUEST_TIMEOUT_S,
