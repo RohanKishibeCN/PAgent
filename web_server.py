@@ -189,34 +189,35 @@ def _notify_feishu(result: dict) -> None:
         direction = diagnosis.get("direction", "?")
         decision_data = result.get("decision") or {}
         dec = decision_data.get("decision") if isinstance(decision_data.get("decision"), dict) else {}
-        order_type = dec.get("order_type", "—")
-        order_dir = dec.get("order_direction", "—")
-        entry = dec.get("entry_price", "—")
-        stop = dec.get("stop_loss_price", "—")
-        tp1 = dec.get("take_profit_price", "—")
-        confidence = dec.get("trade_confidence", "—")
+        order_type = dec.get("order_type") or "—"
 
         dir_emoji = {"bullish": "📈", "bearish": "📉", "neutral": "➡️"}.get(str(direction).lower(), "➡️")
+        has_order = order_type not in ("—", "不下单", "")
 
-        lines = [
-            f"📊 分析结果 — {symbol} {timeframe}",
-            f"当前价格: {price}",
-            f"方向: {dir_emoji} {direction}",
-            f"下单类型: {order_type}",
-        ]
-        if order_dir and order_dir != "—":
-            lines.append(f"方向: {order_dir}")
-        if entry != "—":
-            lines.append(f"入场: {entry}")
-        if stop != "—":
-            lines.append(f"止损: {stop}")
-        if tp1 != "—":
-            lines.append(f"止盈: {tp1}")
-        if confidence != "—":
-            lines.append(f"置信度: {confidence}%")
+        lines = [f"📊 {symbol} {timeframe}", f"价格: {price}", f"方向: {dir_emoji} {direction}"]
+
+        if has_order:
+            lines.append(f"下单类型: {order_type}")
+            order_dir = dec.get("order_direction") or "—"
+            if order_dir != "—":
+                lines.append(f"方向: {order_dir}")
+            entry = dec.get("entry_price") or "—"
+            if entry != "—":
+                lines.append(f"入场: {entry}")
+            stop = dec.get("stop_loss_price") or "—"
+            if stop != "—":
+                lines.append(f"止损: {stop}")
+            tp1 = dec.get("take_profit_price") or "—"
+            if tp1 != "—":
+                lines.append(f"止盈: {tp1}")
+            confidence = dec.get("trade_confidence")
+            if confidence is not None:
+                lines.append(f"置信度: {confidence}%")
+        else:
+            lines.append("不下单")
+
         if result.get("usage"):
-            usage = result["usage"]
-            total = usage.get("total_tokens", "?")
+            total = result["usage"].get("total_tokens", "?")
             lines.append(f"Token: {total}")
 
         text = "\n".join(lines)
