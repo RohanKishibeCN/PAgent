@@ -102,7 +102,7 @@ async def api_analyze(
     symbol: str = Form("BTC/USDT"),
     timeframe: str = Form("1h"),
     bar_count: int = Form(80),
-    no_ai: bool = Form(True),
+    no_ai: bool = Form(False),
 ):
     """触发一次分析，异步执行，返回分析结果"""
     from pa_agent.data.base import (
