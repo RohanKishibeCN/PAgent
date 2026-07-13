@@ -419,7 +419,7 @@ async function saveAllSettings() {
   const felAppId = document.getElementById("s_feishu_appid")?.value?.trim();
   if (felAppId && !felAppId.startsWith("***")) body.feishu.app_id = felAppId;
   const felSecret = document.getElementById("s_feishu_secret")?.value?.trim();
-  if (felSecret) body.feishu.secret = felSecret;
+  if (felSecret) body.feishu.app_secret = felSecret;
 
   try {
     const res = await fetch("/api/settings", {
@@ -456,7 +456,7 @@ async function testFeishu() {
       feishu: {
         enabled: true,
         app_id: (document.getElementById("s_feishu_appid")?.value || "").trim(),
-        secret: (document.getElementById("s_feishu_secret")?.value || "").trim(),
+        app_secret: (document.getElementById("s_feishu_secret")?.value || "").trim(),
         chat_id: (document.getElementById("s_feishu_chatid")?.value || "").trim(),
         webhook_url: document.getElementById("s_feishu_url")?.value || "",
       }

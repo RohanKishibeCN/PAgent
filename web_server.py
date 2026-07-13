@@ -504,7 +504,7 @@ def api_settings():
             "notify_on_order_only": s.feishu.notify_on_order_only,
             "app_id_masked": _mask_secret(s.feishu.app_id) if s.feishu.app_id else "",
             "chat_id": s.feishu.chat_id,
-            "app_mode": bool(s.feishu.app_id and s.feishu.secret and s.feishu.chat_id),
+            "app_mode": bool(s.feishu.app_id and s.feishu.app_secret and s.feishu.chat_id),
         },
         "exchange_api": {
             "api_key_masked": _mask_secret(s.exchange_api.api_key),
