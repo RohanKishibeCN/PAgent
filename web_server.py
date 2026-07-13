@@ -186,6 +186,8 @@ async def api_analyze(
 
     if no_ai:
         result["status"] = "data_only"
+        # 纯数据模式也保存到记录目录
+        _save_data_only_result(result, frame.bars)
         return result
 
     # ── 策略引擎 ────────────────────────────────────────────────────────
@@ -259,7 +261,71 @@ async def api_analyze(
     result["usage"] = record.usage_total
     result["status"] = "success"
 
+    # 确保记录已持久化
+    _ensure_record_persisted(record)
+
     return result
+
+
+# ── 辅助：记录持久化 ──────────────────────────────────────────────────────────
+
+def _save_data_only_result(result: dict, bars: tuple) -> None:
+    """Save a minimal data-only result to the pending directory."""
+    from pa_agent.config.paths import RECORDS_PENDING_DIR
+    from datetime import datetime, timezone
+
+    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).astimezone()
+    ts_str = ts.strftime("%Y-%m-%d_%H-%M-%S")
+    symbol = result.get("symbol", "UNKNOWN")
+    tf = result.get("timeframe", "?")
+    filename = f"{ts_str}_{symbol}_{tf}.json"
+    fpath = RECORDS_PENDING_DIR / filename
+
+    payload = {
+        "meta": {
+            "timestamp_local_iso": ts.isoformat(),
+            "timestamp_local_ms": int(ts.timestamp() * 1000),
+            "symbol": symbol,
+            "timeframe": tf,
+            "bar_count": result.get("bar_count", 0),
+            "ai_provider": {"model": "data_only"},
+            "decision_stance": "balanced",
+        },
+        "kline_data": [b.to_dict() if hasattr(b, "to_dict") else vars(b) for b in (bars or [])],
+        "htf_text": "",
+        "stage1_messages": [],
+        "stage1_response": None,
+        "stage1_diagnosis": result.get("diagnosis"),
+        "stage2_messages": [],
+        "stage2_response": None,
+        "stage2_decision": None,
+        "strategy_files_used": [],
+        "experience_loaded": [],
+        "exception": None,
+        "usage_total": {},
+    }
+    try:
+        fpath.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _ensure_record_persisted(record) -> None:
+    """Ensure the AnalysisRecord is written to disk."""
+    from pa_agent.config.paths import RECORDS_PENDING_DIR
+
+    RECORDS_PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        data = record.model_dump()
+        ts_str = record.meta.timestamp_local_iso.replace(":", "-").replace("T", "_").split(".")[0]
+        symbol = record.meta.symbol.replace("/", "_")
+        filename = f"{ts_str}_{symbol}_{record.meta.timeframe}.json"
+        fpath = RECORDS_PENDING_DIR / filename
+        if not fpath.exists():
+            fpath.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 # ── API: 历史结果列表 ──────────────────────────────────────────────────────
@@ -290,6 +356,37 @@ def api_results():
         except Exception:
             pass
     return {"items": items, "total": len(files)}
+
+
+# ── API: 获取交易对列表 ─────────────────────────────────────────────────────
+
+@app.post("/api/symbols")
+async def api_symbols(body: dict):
+    """获取指定交易所的 USDT/USD 交易对列表，用于前端下拉。
+    
+    默认返回前 50 个主流交易对。
+    """
+    exchange_id = body.get("exchange") or "okx"
+    try:
+        import ccxt
+    except ImportError:
+        return {"symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"]}
+
+    try:
+        ex_class = getattr(ccxt, exchange_id)
+        ex = ex_class()
+        markets = await asyncio.get_event_loop().run_in_executor(None, ex.load_markets)
+        # 过滤 USDT/USD 交易对，按成交量排序取前 50
+        pairs = []
+        for sym, info in markets.items():
+            if info.get("quote") in ("USDT", "USD", "USDC") and info.get("active"):
+                pairs.append((sym, info.get("info", {}).get("vol24h", 0) if isinstance(info.get("info"), dict) else 0))
+        pairs.sort(key=lambda x: -float(x[1]) if x[1] else 0)
+        symbols = [p[0] for p in pairs[:50]]
+        return {"symbols": symbols}
+    except Exception as exc:
+        # 降级返回常见交易对
+        return {"symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT", "XRP/USDT", "BNB/USDT"]}
 
 
 @app.get("/api/results/{filename}")

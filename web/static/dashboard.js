@@ -37,11 +37,41 @@ document.addEventListener("DOMContentLoaded", function() {
         document.getElementById("loadingArea").style.display = "none";
       }
     });
+
+    // 交易所切换时刷新交易对下拉
+    const exSel = document.getElementById("exchange");
+    if (exSel) exSel.addEventListener("change", loadSymbols);
   }
 
   loadExchangeSetting();
   loadSettingsUI();
 });
+
+// ── 动态加载交易对 ──
+async function loadSymbols() {
+  const sel = document.getElementById("symbol");
+  if (!sel) return;
+  const exchange = document.getElementById("exchange")?.value || "okx";
+  sel.disabled = true;
+  sel.innerHTML = '<option value="">加载中...</option>';
+  try {
+    const res = await fetch("/api/symbols", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({exchange}),
+    });
+    const data = await res.json();
+    sel.innerHTML = "";
+    for (const sym of (data.symbols || [])) {
+      const opt = document.createElement("option");
+      opt.value = sym; opt.textContent = sym;
+      sel.appendChild(opt);
+    }
+  } catch(err) {
+    sel.innerHTML = '<option value="BTC/USDT">BTC/USDT</option><option value="ETH/USDT">ETH/USDT</option><option value="SOL/USDT">SOL/USDT</option>';
+  }
+  sel.disabled = false;
+}
 
 // ── 显示分析结果 ──
 function displayResult(data) {
@@ -430,5 +460,6 @@ async function loadExchangeSetting() {
     const sy = data.general?.last_symbol;
     if (ex && document.getElementById("exchange")) document.getElementById("exchange").value = ex;
     if (sy && document.getElementById("symbol")) document.getElementById("symbol").value = sy;
+    loadSymbols();
   } catch(_) {}
 }
